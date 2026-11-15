@@ -21,13 +21,10 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.bukkit.permissions.PermissionAttachment;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.util.Arrays;
-import java.util.List;
 import java.util.Locale;
 import java.util.Random;
 import java.util.UUID;
@@ -45,7 +42,6 @@ public final class BastionDungeons extends JavaPlugin implements Listener {
         BukkitTask polling;
         BukkitTask ending;
         boolean endingNow;
-        PermissionAttachment enterAttachment;
         Session(Player player, String worldName, File schematic) {
             this.playerId = player.getUniqueId();
             this.worldName = worldName;
@@ -134,9 +130,7 @@ public final class BastionDungeons extends JavaPlugin implements Listener {
             }
             world.setSpawnLocation(entry.getBlockX(), entry.getBlockY(), entry.getBlockZ());
             getLogger().info("Spawn seguro para " + world.getName() + ": " + entry.getBlockX() + ", " + entry.getBlockY() + ", " + entry.getBlockZ());
-            // El comando /world puede completar el cambio de mundo en ticks posteriores.
-            // Nunca interpretamos el booleano de dispatchCommand como prueba de teletransporte.
-            enterWithWorldCommand(session, player, world, entry, 0);
+            enterDirectly(session, player, world, entry);
         } catch (Exception ex) {
             getLogger().severe("Error al preparar mazmorra: " + ex.getMessage());
             player.sendMessage("Error preparando schematic. Revisa consola y archivo .schem.");
@@ -172,57 +166,30 @@ public final class BastionDungeons extends JavaPlugin implements Listener {
         return null;
     }
 
-    private void releaseEnterPermission(Session session, Player player) {
-        if (session.enterAttachment != null) {
-            try { if (player != null && player.isOnline()) player.removeAttachment(session.enterAttachment); }
-            catch (Exception ex) { getLogger().warning("No se pudo retirar permiso temporal: " + ex.getMessage()); }
-            session.enterAttachment = null;
-        }
-    }
-
-    private void enterWithWorldCommand(Session session, Player player, World world, Location entry, int attempt) {
+    private void enterDirectly(Session session, Player player, World world, Location entry) {
         if (active != session || session.endingNow || !player.isOnline()) return;
-        if (player.getWorld().equals(world)) {
-            releaseEnterPermission(session, player);
-            // El /world ya funcionó; posicionamos al jugador dentro del schematic.
-            player.teleportAsync(entry).thenAccept(ok -> Bukkit.getScheduler().runTask(this, () -> {
-                if (active != session || session.endingNow) return;
-                if (!ok) getLogger().warning("No se pudo ajustar la posición al spawn del schematic; jugador ya está en el mundo.");
-                player.sendMessage("Mazmorra iniciada. Prueba de " + getConfig().getInt("trial-seconds", 90) + " segundos.");
-                session.ending = Bukkit.getScheduler().runTaskLater(this, () -> finish(session),
-                        Math.max(5, getConfig().getInt("trial-seconds", 90)) * 20L);
-            }));
-            return;
-        }
-        int maxAttempts = Math.max(1, getConfig().getInt("enter-attempts", 3));
-        if (attempt >= maxAttempts) {
-            releaseEnterPermission(session, player);
-            player.sendMessage("/world no consiguió entrar a " + world.getName() + ". Revisa consola: spawn y permiso del plugin /world.");
-            getLogger().warning("/world falló tras " + maxAttempts + " intentos. Jugador=" + player.getName()
-                    + ", mundo actual=" + player.getWorld().getName() + ", destino=" + world.getName());
-            finish(session);
-            return;
-        }
-        String enter = formatCommand("enter-command", session.worldName);
-        String permission = getConfig().getString("enter-permission", "").trim();
-        try {
-            // Mantener el permiso durante los intentos: algunos plugins verifican permisos en ticks posteriores.
-            if (!permission.isEmpty() && session.enterAttachment == null) {
-                session.enterAttachment = player.addAttachment(this);
-                session.enterAttachment.setPermission(permission, true);
-                player.recalculatePermissions();
-                getLogger().info("Permiso temporal /world aplicado: " + permission);
-            }
-            boolean accepted = Bukkit.dispatchCommand(player, enter);
-            getLogger().info("Entrada /" + enter + " intento " + (attempt + 1) + "/" + maxAttempts
-                    + ": dispatch=" + accepted + ", jugador=" + player.getName()
-                    + ", mundoActual=" + player.getWorld().getName());
-        } catch (Exception ex) {
-            getLogger().warning("Error ejecutando /" + enter + ": " + ex.getMessage());
-        }
-        Bukkit.getScheduler().runTaskLater(this,
-                () -> enterWithWorldCommand(session, player, world, entry, attempt + 1),
-                Math.max(20L, getConfig().getLong("enter-check-delay-ticks", 40L)));
+        // Paper gestiona la carga de chunks y el cambio de mundo sin /world ni permisos.
+        getLogger().info("Teletransporte directo: jugador=" + player.getName()
+                + ", destino=" + world.getName() + ", x=" + entry.getBlockX()
+                + ", y=" + entry.getBlockY() + ", z=" + entry.getBlockZ());
+        player.teleportAsync(entry).whenComplete((success, error) ->
+                Bukkit.getScheduler().runTask(this, () -> {
+                    if (active != session || session.endingNow) return;
+                    Player current = Bukkit.getPlayer(session.playerId);
+                    if (current == null || !current.isOnline()) { finish(session); return; }
+                    if (error != null || !Boolean.TRUE.equals(success) || !current.getWorld().equals(world)) {
+                        getLogger().warning("Teletransporte directo fallido: resultado=" + success
+                                + ", mundoActual=" + current.getWorld().getName()
+                                + (error == null ? "" : ", error=" + error));
+                        current.sendMessage("No se pudo entrar a la mazmorra. Revisa la consola.");
+                        finish(session);
+                        return;
+                    }
+                    current.sendMessage("Mazmorra iniciada. Prueba de "
+                            + getConfig().getInt("trial-seconds", 90) + " segundos.");
+                    session.ending = Bukkit.getScheduler().runTaskLater(this, () -> finish(session),
+                            Math.max(5, getConfig().getInt("trial-seconds", 90)) * 20L);
+                }));
     }
 
     private String formatCommand(String key, String worldName) {
@@ -239,7 +206,6 @@ public final class BastionDungeons extends JavaPlugin implements Listener {
         if (session.polling != null) session.polling.cancel();
         if (session.ending != null) session.ending.cancel();
         Player player = Bukkit.getPlayer(session.playerId);
-        releaseEnterPermission(session, player);
         if (player != null && player.isOnline()) {
             World safe = Bukkit.getWorld(getConfig().getString("survival-world", "world"));
             Location destination = session.returnLocation.getWorld() != null &&
@@ -266,7 +232,6 @@ public final class BastionDungeons extends JavaPlugin implements Listener {
 
     @Override public void onDisable() {
         if (active != null) {
-            releaseEnterPermission(active, Bukkit.getPlayer(active.playerId));
             // Durante apagado no se garantiza que DeepVoid siga disponible para borrar.
             getLogger().warning("Partida interrumpida: revisa y elimina el mundo temporal " + active.worldName);
             if (active.polling != null) active.polling.cancel();

@@ -1,5 +1,5 @@
 name: BastionDungeons
-version: 2.0.0-stage1.2
+version: 2.0.0-stage1.3
 main: mc.bastion.dungeons.BastionDungeons
 api-version: '1.21'
 softdepend: [DeepVoid, FastAsyncWorldEdit, WorldEdit]

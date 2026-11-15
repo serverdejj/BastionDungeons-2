@@ -1,33 +1,14 @@
-# BASTION DUNGEONS 2.0.0 — Etapa 1
+# BASTION DUNGEONS 2.0.0 — Etapa 1.3
 
-Proyecto **nuevo** para Purpur/Paper 1.21.11 (Java 21). **Código fuente, no JAR compilado.**
-
-## Incluye
-- Único comando de usuario: `/dungeon start`.
-- Elige aleatoriamente un archivo `.schem` de `plugins/BastionDungeons/schematics/`.
-- Ejecuta `dv create {world}` desde consola; espera a que Bukkit registre el mundo.
-- Pega la estructura con la API de WorldEdit (FAWE compatible según versión instalada).
-- Ejecuta `world {world}` como jugador y lo sitúa en la entrada configurada.
-- Termina automáticamente tras `trial-seconds`, regresa al jugador y ejecuta `dv delete {world}` desde consola.
-- Un jugador/partida a la vez en esta etapa; aún **no** hay mobs, parties, oleadas ni loot.
+Prueba de mundos temporales con DeepVoid, schematics con FAWE y teletransporte directo de Paper.
 
 ## Instalación
-1. Crea un repositorio GitHub vacío y sube **el contenido** de este ZIP.
-2. Ve a **Actions > Build Bastion Dungeons > Run workflow**. Descarga el artifact JAR al finalizar.
-3. Instala el JAR en `plugins/` con DeepVoid y FAWE/WorldEdit instalados.
-4. Reinicia. Coloca uno o más `.schem` en `plugins/BastionDungeons/schematics/`.
-5. Edita `plugins/BastionDungeons/config.yml`: especialmente `survival-world` y `spawn-offset-*` para tu schematic.
-6. Asegúrate de que el jugador tenga permiso para ejecutar `/world` del plugin que aporta ese comando. **No le des OP**.
-7. Ejecuta `/dungeon start`.
+1. Compila con GitHub Actions (workflow incluido).
+2. Instala el JAR en Purpur/Paper 1.21.11 con Java 21, DeepVoid y FAWE.
+3. Arranca el servidor y coloca uno o más archivos `.schem` en `plugins/BastionDungeons/schematics/`.
+4. En `plugins/BastionDungeons/config.yml` configura `survival-world` con un mundo existente y ajusta `trial-seconds` si quieres.
+5. Ejecuta `/dungeon start`. El plugin elige un mapa aleatorio, crea el mundo temporal con `dv create`, pega el schematic, busca suelo seguro y teletransporta directamente con `Player.teleportAsync`. Al terminar la prueba regresa al jugador y ejecuta `dv delete`.
 
-## Advertencias
-- La existencia de un mundo en Bukkit no garantiza que DeepVoid haya completado todas sus tareas; comprueba el comportamiento real en tu host.
-- El punto de entrada depende del origen del `.schem`. Ajusta los offsets para evitar aparecer dentro de bloques o caer al vacío.
-- El plugin comprueba que no queden jugadores antes de borrar, pero si hay alguien dentro, deja el mundo para limpieza manual.
-- No borres mundos preexistentes llamados `bd_...` sin verificar. Esta etapa crea nombres aleatorios nuevos.
-- Si el servidor se apaga durante una partida, revisa mundos temporales pendientes de limpieza.
-- No se ha verificado una compilación ni una prueba real de integración con las versiones de DeepVoid y FAWE de tu servidor.
+No se utiliza `/world` ni se conceden permisos temporales. Solo se admite una partida a la vez en esta etapa.
 
-
-## Corrección de entrada 2.0.0-stage1.1
-El plugin ahora espera y reintenta `/world` (3 veces por defecto) en lugar de asumir que debe teletransportar en 10 ticks. Registra cada intento en consola. Si el comando requiere permisos, configura `enter-permission` con el nodo **exacto** del plugin que implementa `/world`. Se concede temporalmente, sin OP. El comando `/world` se sigue ejecutando como jugador.
+**Aviso:** el archivo `.schem` debe contener una ubicación segura; si no la hay se crea una plataforma de emergencia. La prueba aún no incluye mobs, oleadas ni loot. Si falla el retorno, el plugin evita borrar un mundo con jugadores dentro. No se ha verificado en un servidor real.

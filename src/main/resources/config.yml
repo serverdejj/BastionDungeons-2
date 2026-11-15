@@ -7,15 +7,8 @@ trial-seconds: 90
 world-load-timeout-seconds: 45
 # Nombres de comandos sin /; {world} se reemplaza por el nombre temporal
 create-command: 'dv create {world}'
-enter-command: 'world {world}'
 delete-command: 'dv delete {world}'
-# Si /world requiere un permiso, coloca aquí el nodo exacto de tu plugin de mundos.
-# Escribe el permiso REAL del plugin que proporciona /world (consulta /help world o su documentación).
-# Se mantiene solo durante la entrada y se retira al terminar. No concede OP.
-enter-permission: ""
-# Intentos y espera para comandos /world que teletransportan con retraso
-enter-attempts: 3
-enter-check-delay-ticks: 40
+# La entrada usa Paper teleportAsync, sin /world ni permisos.
 # Ubicación de pegado del origen del schematic
 paste-x: 0
 paste-y: 80
