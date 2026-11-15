@@ -27,3 +27,7 @@ Proyecto **nuevo** para Purpur/Paper 1.21.11 (Java 21). **Código fuente, no JAR
 - No borres mundos preexistentes llamados `bd_...` sin verificar. Esta etapa crea nombres aleatorios nuevos.
 - Si el servidor se apaga durante una partida, revisa mundos temporales pendientes de limpieza.
 - No se ha verificado una compilación ni una prueba real de integración con las versiones de DeepVoid y FAWE de tu servidor.
+
+
+## Corrección de entrada 2.0.0-stage1.1
+El plugin ahora espera y reintenta `/world` (3 veces por defecto) en lugar de asumir que debe teletransportar en 10 ticks. Registra cada intento en consola. Si el comando requiere permisos, configura `enter-permission` con el nodo **exacto** del plugin que implementa `/world`. Se concede temporalmente, sin OP. El comando `/world` se sigue ejecutando como jugador.
