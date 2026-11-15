@@ -10,7 +10,8 @@ create-command: 'dv create {world}'
 enter-command: 'world {world}'
 delete-command: 'dv delete {world}'
 # Si /world requiere un permiso, coloca aquí el nodo exacto de tu plugin de mundos.
-# El permiso se concede temporalmente al ejecutar /world (sin dar OP).
+# Escribe el permiso REAL del plugin que proporciona /world (consulta /help world o su documentación).
+# Se mantiene solo durante la entrada y se retira al terminar. No concede OP.
 enter-permission: ""
 # Intentos y espera para comandos /world que teletransportan con retraso
 enter-attempts: 3
@@ -19,7 +20,8 @@ enter-check-delay-ticks: 40
 paste-x: 0
 paste-y: 80
 paste-z: 0
-# Offset desde el origen de pegado para la entrada al mapa; ajustar a tu .schem
+# El plugin busca automáticamente piso seguro dentro del .schem.
+# Estos offsets se conservan por compatibilidad, pero ya no se usan para el spawn automático.
 spawn-offset-x: 0.5
 spawn-offset-y: 2.0
 spawn-offset-z: 0.5

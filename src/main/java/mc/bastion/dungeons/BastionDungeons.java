@@ -11,6 +11,8 @@ import com.sk89q.worldedit.math.BlockVector3;
 import com.sk89q.worldedit.session.ClipboardHolder;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.Material;
+import org.bukkit.block.Block;
 import org.bukkit.World;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
@@ -43,6 +45,7 @@ public final class BastionDungeons extends JavaPlugin implements Listener {
         BukkitTask polling;
         BukkitTask ending;
         boolean endingNow;
+        PermissionAttachment enterAttachment;
         Session(Player player, String worldName, File schematic) {
             this.playerId = player.getUniqueId();
             this.worldName = worldName;
@@ -120,11 +123,17 @@ public final class BastionDungeons extends JavaPlugin implements Listener {
                         .to(pasteAt).ignoreAirBlocks(false).build());
                 edit.flushSession();
             }
-            Location entry = new Location(world,
-                    pasteAt.x() + getConfig().getDouble("spawn-offset-x", 0.5),
-                    pasteAt.y() + getConfig().getDouble("spawn-offset-y", 2),
-                    pasteAt.z() + getConfig().getDouble("spawn-offset-z", 0.5));
+            Location entry = findSafeEntry(world, clipboard, pasteAt);
+            if (entry == null) {
+                getLogger().warning("No se encontró piso seguro en el schematic. Creando plataforma de emergencia en el mundo temporal.");
+                int x = pasteAt.x(), y = Math.min(world.getMaxHeight() - 4, Math.max(world.getMinHeight() + 2, pasteAt.y() + 5)), z = pasteAt.z();
+                for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++)
+                    world.getBlockAt(x + dx, y - 1, z + dz).setType(Material.STONE);
+                for (int dy = 0; dy < 3; dy++) world.getBlockAt(x, y + dy, z).setType(Material.AIR);
+                entry = new Location(world, x + 0.5, y, z + 0.5);
+            }
             world.setSpawnLocation(entry.getBlockX(), entry.getBlockY(), entry.getBlockZ());
+            getLogger().info("Spawn seguro para " + world.getName() + ": " + entry.getBlockX() + ", " + entry.getBlockY() + ", " + entry.getBlockZ());
             // El comando /world puede completar el cambio de mundo en ticks posteriores.
             // Nunca interpretamos el booleano de dispatchCommand como prueba de teletransporte.
             enterWithWorldCommand(session, player, world, entry, 0);
@@ -135,9 +144,46 @@ public final class BastionDungeons extends JavaPlugin implements Listener {
         }
     }
 
+    private Location findSafeEntry(World world, Clipboard clipboard, BlockVector3 pasteAt) {
+        // WorldEdit pega la región desplazada respecto al origen del clipboard.
+        BlockVector3 min = clipboard.getRegion().getMinimumPoint().subtract(clipboard.getOrigin()).add(pasteAt);
+        BlockVector3 max = clipboard.getRegion().getMaximumPoint().subtract(clipboard.getOrigin()).add(pasteAt);
+        int minY = Math.max(world.getMinHeight() + 1, min.y());
+        int maxY = Math.min(world.getMaxHeight() - 3, max.y() + 2);
+        int cx = (min.x() + max.x()) / 2, cz = (min.z() + max.z()) / 2;
+        int maxRadius = Math.min(48, Math.max(max.x() - min.x(), max.z() - min.z()));
+        for (int radius = 0; radius <= maxRadius; radius++) {
+            for (int dx = -radius; dx <= radius; dx++) for (int dz = -radius; dz <= radius; dz++) {
+                if (radius > 0 && Math.abs(dx) != radius && Math.abs(dz) != radius) continue;
+                int x = cx + dx, z = cz + dz;
+                if (x < min.x() || x > max.x() || z < min.z() || z > max.z()) continue;
+                for (int y = maxY; y >= minY; y--) {
+                    Block floor = world.getBlockAt(x, y - 1, z);
+                    Block feet = world.getBlockAt(x, y, z);
+                    Block head = world.getBlockAt(x, y + 1, z);
+                    if (floor.getType().isSolid() && !floor.isLiquid() &&
+                            feet.isPassable() && head.isPassable() &&
+                            !feet.isLiquid() && !head.isLiquid()) {
+                        return new Location(world, x + 0.5, y, z + 0.5);
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private void releaseEnterPermission(Session session, Player player) {
+        if (session.enterAttachment != null) {
+            try { if (player != null && player.isOnline()) player.removeAttachment(session.enterAttachment); }
+            catch (Exception ex) { getLogger().warning("No se pudo retirar permiso temporal: " + ex.getMessage()); }
+            session.enterAttachment = null;
+        }
+    }
+
     private void enterWithWorldCommand(Session session, Player player, World world, Location entry, int attempt) {
         if (active != session || session.endingNow || !player.isOnline()) return;
         if (player.getWorld().equals(world)) {
+            releaseEnterPermission(session, player);
             // El /world ya funcionó; posicionamos al jugador dentro del schematic.
             player.teleportAsync(entry).thenAccept(ok -> Bukkit.getScheduler().runTask(this, () -> {
                 if (active != session || session.endingNow) return;
@@ -150,7 +196,8 @@ public final class BastionDungeons extends JavaPlugin implements Listener {
         }
         int maxAttempts = Math.max(1, getConfig().getInt("enter-attempts", 3));
         if (attempt >= maxAttempts) {
-            player.sendMessage("/world no consiguió entrar a " + world.getName() + ". Revisa la consola y los permisos del comando.");
+            releaseEnterPermission(session, player);
+            player.sendMessage("/world no consiguió entrar a " + world.getName() + ". Revisa consola: spawn y permiso del plugin /world.");
             getLogger().warning("/world falló tras " + maxAttempts + " intentos. Jugador=" + player.getName()
                     + ", mundo actual=" + player.getWorld().getName() + ", destino=" + world.getName());
             finish(session);
@@ -158,21 +205,20 @@ public final class BastionDungeons extends JavaPlugin implements Listener {
         }
         String enter = formatCommand("enter-command", session.worldName);
         String permission = getConfig().getString("enter-permission", "").trim();
-        PermissionAttachment attachment = null;
         try {
-            // Permiso temporal opcional; evita conceder OP y se retira inmediatamente.
-            if (!permission.isEmpty()) {
-                attachment = player.addAttachment(this);
-                attachment.setPermission(permission, true);
+            // Mantener el permiso durante los intentos: algunos plugins verifican permisos en ticks posteriores.
+            if (!permission.isEmpty() && session.enterAttachment == null) {
+                session.enterAttachment = player.addAttachment(this);
+                session.enterAttachment.setPermission(permission, true);
                 player.recalculatePermissions();
+                getLogger().info("Permiso temporal /world aplicado: " + permission);
             }
             boolean accepted = Bukkit.dispatchCommand(player, enter);
             getLogger().info("Entrada /" + enter + " intento " + (attempt + 1) + "/" + maxAttempts
-                    + ": dispatch=" + accepted + ", jugador=" + player.getName());
+                    + ": dispatch=" + accepted + ", jugador=" + player.getName()
+                    + ", mundoActual=" + player.getWorld().getName());
         } catch (Exception ex) {
             getLogger().warning("Error ejecutando /" + enter + ": " + ex.getMessage());
-        } finally {
-            if (attachment != null) player.removeAttachment(attachment);
         }
         Bukkit.getScheduler().runTaskLater(this,
                 () -> enterWithWorldCommand(session, player, world, entry, attempt + 1),
@@ -193,6 +239,7 @@ public final class BastionDungeons extends JavaPlugin implements Listener {
         if (session.polling != null) session.polling.cancel();
         if (session.ending != null) session.ending.cancel();
         Player player = Bukkit.getPlayer(session.playerId);
+        releaseEnterPermission(session, player);
         if (player != null && player.isOnline()) {
             World safe = Bukkit.getWorld(getConfig().getString("survival-world", "world"));
             Location destination = session.returnLocation.getWorld() != null &&
@@ -219,6 +266,7 @@ public final class BastionDungeons extends JavaPlugin implements Listener {
 
     @Override public void onDisable() {
         if (active != null) {
+            releaseEnterPermission(active, Bukkit.getPlayer(active.playerId));
             // Durante apagado no se garantiza que DeepVoid siga disponible para borrar.
             getLogger().warning("Partida interrumpida: revisa y elimina el mundo temporal " + active.worldName);
             if (active.polling != null) active.polling.cancel();
