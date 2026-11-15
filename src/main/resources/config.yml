@@ -1,0 +1,21 @@
+# Etapa 1: prueba automática de mundo + schematic + entrada + salida + borrado
+# ¡IMPORTANTE! Ajusta el nombre exacto del mundo Survival antes de usar.
+survival-world: world
+# Tiempo de prueba dentro de la mazmorra, en segundos
+trial-seconds: 90
+# Máximo de espera para que DeepVoid cargue el mundo
+world-load-timeout-seconds: 45
+# Nombres de comandos sin /; {world} se reemplaza por el nombre temporal
+create-command: 'dv create {world}'
+enter-command: 'world {world}'
+delete-command: 'dv delete {world}'
+# Para ejecutar /world como jugador, necesita el permiso de ese comando.
+# Se recomienda otorgar únicamente el permiso requerido por el plugin de mundos.
+# Ubicación de pegado del origen del schematic
+paste-x: 0
+paste-y: 80
+paste-z: 0
+# Offset desde el origen de pegado para la entrada al mapa; ajustar a tu .schem
+spawn-offset-x: 0.5
+spawn-offset-y: 2.0
+spawn-offset-z: 0.5
